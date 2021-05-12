@@ -1,0 +1,97 @@
+---
+title: "Data Collection"
+author: "Dulshani"
+date: "07/05/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rjson)
+library(rtweet)
+```
+
+```{r get_credentials}
+authentication <- fromJSON(file = "twitter_credentials.json")
+```
+
+
+```{r collection}
+twitter_token <- create_token(app = "blasphemy", 
+                              consumer_key = authentication$CONSUMER_KEY,
+                              consumer_secret = authentication$CONSUMER_SECRET,
+                              access_token = authentication$ACCESS_TOKEN,
+                              access_secret = authentication$ACCESS_SECRET)
+```
+
+```{r}
+# Test whether access works
+blasphemy_tweets <- search_tweets(q = 'blasphemy', 
+                                  n = 100000, 
+                                  parse = TRUE, 
+                                  language = "en",
+                                  retryonratelimit = TRUE,
+                                  type = "mixed")
+```
+
+```{r}
+head(blasphemy_tweets)
+```
+```{r}
+# Save to a 
+save(blasphemy_tweets, file = "blaspehmy.rda")
+dim(blasphemy_tweets)
+```
+
+```{r}
+blasphemy_preprocessed <- blasphemy_tweets %>%
+  mutate(text = tolower(text),# convert to lowercase
+         is_blasphemy_status = str_detect(text, 'blasphemy')  # Check if status contains the word 'blasphemy'
+         ) %>% 
+  filter(is_blasphemy_status)
+
+
+dim(blasphemy_preprocessed)
+```
+
+```{r}
+head(blasphemy_preprocessed)
+```
+
+```{r}
+blasphemy_preprocessed %>% 
+  filter(!is.na(place_name))
+```
+
+```{r}
+# derive country
+#In the case when a country is present, get the country from there - only 181 observations
+# If not, then extract country from location
+
+```
+
+
+
+
+
+```{r}
+# Join tweet data to user data
+tweets_only <- blasphemy_tweets %>%
+  merge(blasphemcy_users, by = c('user_id', 'screen_name'), all = TRUE)
+
+head(blasphemy_tweets_users, 3)
+```
+
+
+```{r pressure, echo=FALSE}
+dim(blasphemy_tweets_users)
+```
+
+```{r}
+dim(blasphemy_tweets)
+```
+```{r}
+dim(blasphemcy_users)
+```
+
