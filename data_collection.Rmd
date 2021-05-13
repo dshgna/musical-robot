@@ -7,10 +7,19 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(countrycode)
+library(hash)
+library(stringi)
 library(tidyverse)
 library(rjson)
 library(rtweet)
 ```
+
+```{r}
+url = "https://raw.githubusercontent.com/vincentarelbundock/countrycode/master/data/custom_dictionaries/us_states.csv"
+state_dict = read.csv(url, stringsAsFactors = FALSE)
+```
+
 
 ```{r get_credentials}
 authentication <- fromJSON(file = "twitter_credentials.json")
@@ -36,62 +45,264 @@ blasphemy_tweets <- search_tweets(q = 'blasphemy',
 ```
 
 ```{r}
-head(blasphemy_tweets)
+# Save to a RDA file
+save(blasphemy_tweets, file = "blasphemy_tweets.rda")
 ```
+
 ```{r}
-# Save to a 
-save(blasphemy_tweets, file = "blaspehmy.rda")
+# Extract from RDA
+load(file = "blasphemy_tweets.rda")
 dim(blasphemy_tweets)
 ```
+
+
+```{r}
+head(blasphemy_tweets)
+```
+
+```{r}
+# Code adapted from https://github.com/ropensci/rtweet/issues/391#issuecomment-786942538
+# Changes to original code
+## Returns country instead of full place name
+## Includes error handling
+
+lookup_coords_nominatim <- function(location) {
+  country <- tryCatch(
+    {
+      place <- location
+      if (grepl("^us$|^usa$|^united states$|^u\\.s",
+        location,
+        ignore.case = TRUE
+      )) {
+        boxp <- c(
+          sw.lng = -124.848974,
+          sw.lat = 24.396308,
+          ne.lng = -66.885444,
+          ne.lat = 49.384358
+        )
+        point <- c(
+          lat = 36.89,
+          lng = -95.867
+        )
+      } else if (grepl("^world$|^all$|^globe$|^earth$",
+        location,
+        ignore.case = TRUE
+      )) {
+        boxp <- c(
+          sw.lng = -180,
+          sw.lat = -90,
+          ne.lng = 180,
+          ne.lat = 90
+        )
+        point <- c(
+          lat = 0,
+          lng = 0
+        )
+      } else {
+        ## encode address
+        location <- gsub(" ", "+",  location)
+        ## compose query
+        params <- list(
+          q = location,
+          format = "json",
+          limit = 1
+        )
+        params <- params[!vapply(params, is.null, logical(1))]
+        params <- paste0(
+          mapply(
+            function(x, y) paste0(x, "=", y),
+            names(params), params
+          ),
+          collapse = "&"
+        )
+        ## build URL - final name in English
+        geourl <- paste0(
+          "https://nominatim.openstreetmap.org/search?",
+          params,
+          "&accept-language=en"
+        )
+        
+        ## read and convert to list obj
+        r <- jsonlite::fromJSON(geourl)
+        ## extract and name box and point data frames
+        bbox <- as.double(unlist(r$boundingbox))
+        boxp <- c(
+          sw.lng = bbox[3],
+          sw.lat = bbox[1],
+          ne.lng = bbox[4],
+          ne.lat = bbox[2]
+        )
+        point <- c(
+          lat = as.double(r$lat),
+          lng = as.double(r$lon)
+        )
+        # Country name from Nominatim
+        place <- str_split(r$display_name, ', ')
+        country <- place[[1]][length(place[[1]])]
+      }
+      country
+    },
+    
+    error = function(cond) {
+      message(paste("Issue with location:", location))
+      message("Here's the original error message:")
+      message(cond)
+      return(NA)
+    }
+  )
+  return(country)
+}
+```
+
+
+```{r}
+#mutate(country_from_location = possibly(lookup_coords_nominatim, otherwise = NA_real_)(location)) 
+
+```
+
+
+```{r}
+vec_country <- stri_c(stri_trans_general(codelist$country.name.en, id = "Latin-ASCII"), collapse = "|")
+vec_state_name <- stri_trans_general(state_dict$state, id = "Latin-ASCII")
+vec_state_abbr <- stri_trans_general(state_dict$abbreviation, id = "Latin-ASCII")
+vec_state <- stri_c(c(vec_state_name, vec_state_abbr), collapse = "|")
+
+get_country_from_location <- function(location) {
+  
+  # Remove empty strings and very common noise
+  if (location == '' | str_detect(tolower(location), 'earth|nowhere')) {
+    return('Not provided') # 9829 
+    
+  } else {
+    
+    # Checks for direct matches, including country names in foreign languages
+    country_direct <- countryname(location, 'country.name.en')
+    if (!is.na(country_direct)) {
+      return(country_direct) # 14436
+    }
+    
+    country <- stri_extract_all(location, regex = sprintf(r"(\b(%s)\b)", vec_country))[[1]][1]
+    if (!is.na(country)) {
+      return(country) # 14436
+    }
+    
+    # Check for US states
+    state <- stri_extract_all(location, regex = sprintf(r"(\b(%s)\b)", vec_state))
+    if (!is.na(state[[1]][1])) {
+      return('United States') # 17737
+    }
+  
+  }
+  return(NA)
+}
+```
+
+```{r}
+codelist
+```
+
+```{r}
+countryname('US', 'country.name.en')
+```
+
+
+
+
+```{r}
+get_country_from_location('Afeganistão')
+get_country_from_location('MA')
+get_country_from_location('\U0001f1e6\U0001f1f8')
+get_country_from_location('BOSTON ma')
+```
+```{r}
+countryname('Afeganistão')
+countrycode('\U0001f1e6\U0001f1f8', 'unicode.symbol', 'country.name')
+```
+
 
 ```{r}
 blasphemy_preprocessed <- blasphemy_tweets %>%
   mutate(text = tolower(text),# convert to lowercase
          is_blasphemy_status = str_detect(text, 'blasphemy')  # Check if status contains the word 'blasphemy'
          ) %>% 
-  filter(is_blasphemy_status)
-
-
+  filter(is_blasphemy_status) %>%
+  rowwise() %>%
+  # In the case when a country is present, get the country from there - only 181 observations
+  # If not, then extract country from location
+  mutate(country_from_location = ifelse(!is.na(country), country, get_country_from_location(location))) %>%
+  select(user_id, status_id, created_at, screen_name, text, reply_to_status_id, 
+         is_quote, is_retweet, country, location, country_from_location)  
+  
 dim(blasphemy_preprocessed)
+```
+
+```{r}
+# Get unique locations which have not yet been assigned a country
+no_derived_countries <- blasphemy_preprocessed %>%
+  filter(is.na(country_from_location))
+unique_locations <- unique(blasphemy_preprocessed$location)
+```
+
+```{r}
+# Extract the country for a list of unique locations
+extracted_locations <- hash() 
+for (location in unique_locations) {
+  country <- lookup_coords_nominatim(location)
+  if (!is.na(country)) {
+    extracted_locations[[location]] <- country
+  }
+}
+```
+```{r}
+length(extracted_locations)
 ```
 
 ```{r}
 head(blasphemy_preprocessed)
 ```
-
 ```{r}
-blasphemy_preprocessed %>% 
-  filter(!is.na(place_name))
+extracted_locations['Sendai City, Miyagi']
 ```
 
 ```{r}
-# derive country
-#In the case when a country is present, get the country from there - only 181 observations
-# If not, then extract country from location
-
+get_country_from_api <- function(location) {
+  if (has.key(location, extracted_locations) == TRUE) {
+    return(extracted_locations[[location]])
+  } else {
+    return(NA)
+  }
+}
 ```
-
-
-
 
 
 ```{r}
-# Join tweet data to user data
-tweets_only <- blasphemy_tweets %>%
-  merge(blasphemcy_users, by = c('user_id', 'screen_name'), all = TRUE)
-
-head(blasphemy_tweets_users, 3)
-```
-
-
-```{r pressure, echo=FALSE}
-dim(blasphemy_tweets_users)
+blasphemy_preprocessed_final <- blasphemy_preprocessed %>%
+  rowwise() %>%
+  mutate(country_from_location = ifelse(is.na(country_from_location),
+                                        get_country_from_api(location),
+                                        country_from_location)) %>%
+  mutate(country_from_location = ifelse(country_from_location == 'Not provided',
+                                        NA,
+                                        country_from_location)) %>%
+  select(!c('country', 'location'))
 ```
 
 ```{r}
-dim(blasphemy_tweets)
-```
-```{r}
-dim(blasphemcy_users)
+has_locations <- blasphemy_preprocessed_final %>%
+  filter(!is.na(country_from_location)) 
+dim(has_locations) # 13,593 28K did not have any location information whatsoever and 4K had invalid locations
 ```
 
+```{r}
+head(has_locations)
+```
+
+
+```{r}
+lookup_coords_nominatim("Planet Earth")
+```
+
+```{r}
+# Save pre-processed data to a RDA file
+save(blasphemy_preprocessed_final, file = "blasphemy_preprocessed_final.rda")
+```
