@@ -41,20 +41,20 @@ blasphemy_tweets <- search_tweets(q = 'blasphemy',
                                   parse = TRUE, 
                                   language = "en",
                                   retryonratelimit = TRUE,
-                                  type = "mixed")
+                                  type = "mixed",
+                                  include_rts = FALSE)
 ```
 
 ```{r}
 # Save to a RDA file
 save(blasphemy_tweets, file = "blasphemy_tweets.rda")
+dim(blasphemy_tweets)
 ```
 
 ```{r}
 # Extract from RDA
 load(file = "blasphemy_tweets.rda")
-dim(blasphemy_tweets)
 ```
-
 
 ```{r}
 head(blasphemy_tweets)
@@ -156,12 +156,6 @@ lookup_coords_nominatim <- function(location) {
 
 
 ```{r}
-#mutate(country_from_location = possibly(lookup_coords_nominatim, otherwise = NA_real_)(location)) 
-
-```
-
-
-```{r}
 vec_country <- stri_c(stri_trans_general(codelist$country.name.en, id = "Latin-ASCII"), collapse = "|")
 vec_state_name <- stri_trans_general(state_dict$state, id = "Latin-ASCII")
 vec_state_abbr <- stri_trans_general(state_dict$abbreviation, id = "Latin-ASCII")
@@ -198,27 +192,20 @@ get_country_from_location <- function(location) {
 ```
 
 ```{r}
+# Exploring content of codelist
 codelist
 ```
 
 ```{r}
-countryname('US', 'country.name.en')
-```
-
-
-
-
-```{r}
+# Testing functions
 get_country_from_location('Afeganistão')
 get_country_from_location('MA')
 get_country_from_location('\U0001f1e6\U0001f1f8')
 get_country_from_location('BOSTON ma')
-```
-```{r}
 countryname('Afeganistão')
 countrycode('\U0001f1e6\U0001f1f8', 'unicode.symbol', 'country.name')
+countryname('US', 'country.name.en')
 ```
-
 
 ```{r}
 blasphemy_preprocessed <- blasphemy_tweets %>%
@@ -229,9 +216,12 @@ blasphemy_preprocessed <- blasphemy_tweets %>%
   rowwise() %>%
   # In the case when a country is present, get the country from there - only 181 observations
   # If not, then extract country from location
-  mutate(country_from_location = ifelse(!is.na(country), country, get_country_from_location(location))) %>%
-  select(user_id, status_id, created_at, screen_name, text, reply_to_status_id, 
-         is_quote, is_retweet, country, location, country_from_location)  
+  mutate(country_from_location = ifelse(!is.na(country), 
+                                        countryname(country, 'country.name.en'), 
+                                        get_country_from_location(location))) %>%
+  select(user_id, status_id, created_at, screen_name, text, reply_to_status_id,
+         is_quote, is_retweet, quoted_status_id, retweet_status_id, 
+         country, location, country_from_location)  
   
 dim(blasphemy_preprocessed)
 ```
@@ -252,6 +242,8 @@ for (location in unique_locations) {
     extracted_locations[[location]] <- country
   }
 }
+# Takes quite some time - so saved to RDA for quicker access
+save(extracted_locations, file = "extracted_locations.rda")
 ```
 ```{r}
 length(extracted_locations)
@@ -261,10 +253,12 @@ length(extracted_locations)
 head(blasphemy_preprocessed)
 ```
 ```{r}
+# Testing function
 extracted_locations['Sendai City, Miyagi']
 ```
 
 ```{r}
+# Function to retrieve the country from the data in extracted_locations
 get_country_from_api <- function(location) {
   if (has.key(location, extracted_locations) == TRUE) {
     return(extracted_locations[[location]])
@@ -276,26 +270,55 @@ get_country_from_api <- function(location) {
 
 
 ```{r}
+# Function to derive region from country - handles ambiguous cases
+derive_region <- function(country) {
+  region <- countrycode(country, "country.name", "region")
+  if (is.na(region)) {
+    if (country == 'Europe' | country == 'Aegean Sea') {
+      region <- 'Europe & Central Asia'
+    } else if (country == 'North America') {
+      region <- 'North America'
+    } else if (country == 'Africa') {
+      region <- 'Sub-Saharan Africa'    
+    } else if (country == 'Asia') {
+      region <- 'South Asia'    
+    } else if (country == 'Oceania') {
+      region <- 'East Asia & Pacific'    
+    } else {
+      region <- 'Not Provided'
+    }
+  }
+  return(region)
+}
+```
+
+
+
+```{r}
 blasphemy_preprocessed_final <- blasphemy_preprocessed %>%
   rowwise() %>%
   mutate(country_from_location = ifelse(is.na(country_from_location),
                                         get_country_from_api(location),
                                         country_from_location)) %>%
-  mutate(country_from_location = ifelse(country_from_location == 'Not provided',
-                                        NA,
+  mutate(country_from_location = ifelse(is.na(country_from_location),
+                                        'Not provided',
                                         country_from_location)) %>%
+  mutate(region = ifelse(!is.na(country_from_location),
+                         derive_region(country_from_location),
+                         'Not Provided')) %>%
   select(!c('country', 'location'))
 ```
 
 ```{r}
 has_locations <- blasphemy_preprocessed_final %>%
-  filter(!is.na(country_from_location)) 
+  filter(!is.na(region)) 
 dim(has_locations) # 13,593 28K did not have any location information whatsoever and 4K had invalid locations
 ```
 
 ```{r}
 head(has_locations)
 ```
+
 
 
 ```{r}

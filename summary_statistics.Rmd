@@ -1,0 +1,264 @@
+---
+title: "Summary Statistics"
+date: "13/05/2021"
+output:
+  html_document:
+    keep_md: yes
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  fig.path = "../report/images/",
+  dev = "png",
+  dpi = 300,
+  cache = TRUE 
+  )
+library(countrycode)
+library(grid)
+library(gridExtra)
+library(quanteda)
+library(quanteda.textstats)
+library(spacyr) # lemmatisation, pos tagging
+library(tidyverse)
+library(tm)
+library(vtable)
+
+spacy_initialize(model = "en_core_web_trf")
+```
+
+```{r load_data}
+load(file = "blasphemy_preprocessed_final.rda")
+dim(blasphemy_preprocessed_final)
+```
+
+```{r}
+head(blasphemy_preprocessed_final)
+```
+
+
+```{r}
+blasphemy_preprocessed_final <- blasphemy_preprocessed_final %>%
+  filter(region != 'Not Provided')
+
+dim(blasphemy_preprocessed_final)
+```
+
+
+## Time Range
+
+```{r}
+print(min(blasphemy_preprocessed_final$created_at))
+print(max(blasphemy_preprocessed_final$created_at))
+```
+```{r}
+# Additional pre-processing
+# Convert to lower case
+blasphemy_preprocessed_final$text <- blasphemy_preprocessed_final$text %>% tolower()
+
+# Remove Twitter handles
+blasphemy_preprocessed_final$text <- str_replace_all(blasphemy_preprocessed_final$text, pattern = "[@]\\S+", replacement = "")
+
+# Remove URLs
+blasphemy_preprocessed_final$text <- str_replace_all(blasphemy_preprocessed_final$text, pattern = "(http|www)\\S+", replacement = "")
+
+# Get rid of non ASCII characters (largely emojis in this case)
+blasphemy_preprocessed_final$text <- gsub("[^\x01-\x7F]", "", blasphemy_preprocessed_final$text)
+
+# Remove excess white spaces within the texts and at their beginning/end
+blasphemy_preprocessed_final$text <- blasphemy_preprocessed_final$text %>% 
+  stripWhitespace() %>% 
+  trimws()
+
+# Remove duplicates and tweets with only one word left:
+blasphemy_preprocessed_final <- blasphemy_preprocessed_final %>% distinct(text, .keep_all = TRUE)
+blasphemy_preprocessed_final <- blasphemy_preprocessed_final[sapply(strsplit(blasphemy_preprocessed_final$text, " "), length) > 1,]
+```
+
+```{r}
+dim(blasphemy_preprocessed_final)
+```
+
+
+## Countries
+
+```{r}
+(country_counts <- blasphemy_preprocessed_final %>%
+  group_by(country_from_location) %>%
+  summarise(n = n()) %>%
+  mutate(country_from_location = ifelse(is.na(country_from_location), 'Not Provided', country_from_location),
+         country_from_location = ifelse(n < 100, 'Rest of World', country_from_location)) %>%
+  group_by(country_from_location) %>%
+  summarise(num_tweets = sum(n)) %>%
+  ungroup() %>%
+  arrange(num_tweets) %>%
+  mutate(country_from_location = factor(country_from_location, levels = country_from_location))
+)
+```
+
+```{r country_tweets}
+# Country-level distribution of the blasphemy debate
+p1 <- ggplot(data = country_counts, aes(x = country_from_location, y = num_tweets)) +
+    geom_bar(stat = 'identity', fill = "#f68060", alpha = .6, width = .8) +
+    coord_flip() +
+    ggtitle("Country") +
+    ylab("# Tweets") +
+    scale_x_discrete(labels = function(x) stringr::str_wrap(x, width = 10)) +
+    xlab("") +
+    theme_bw()
+```
+
+```{r}
+# Region based categorisation
+(region_counts <- blasphemy_preprocessed_final %>%
+  group_by(region) %>%
+  summarise(num_tweets = n()) %>% 
+  arrange(num_tweets) %>%
+  mutate(region = factor(region, levels = region))
+)
+```
+
+
+```{r region_tweets}
+# CRegion-level distribution of the blasphemy debate
+p2 <- ggplot(data = region_counts, aes(x = region, y = num_tweets)) +
+    geom_bar(stat = 'identity', fill = "#f68060", alpha = .6, width = .8) +
+    coord_flip() +
+    ggtitle("Region") +
+    xlab("") +
+    ylab("# Tweets") +
+    scale_x_discrete(labels = function(x) stringr::str_wrap(x, width = 10)) +
+    theme_bw()
+```
+
+```{r cache=FALSE, tweet_distribution, fig.height=3}
+# Combine graphs
+grid.arrange(p1, p2, nrow = 1)
+```
+
+
+## Statistics about the text
+
+```{r}
+# Create Corpus
+blasphemy_corpus <- corpus(blasphemy_preprocessed_final)
+```
+
+
+```{r}
+blasphemy_summary <- textstat_summary(blasphemy_corpus) %>%
+   cbind(region = blasphemy_preprocessed_final$region)
+```
+
+```{r}
+head(blasphemy_summary)
+```
+
+
+```{r}
+(blasphemy_all_summary <- blasphemy_summary %>%
+    summarise(across(where(is.numeric), ~ median(.x, na.rm = TRUE))))
+```
+
+```{r}
+summary(blasphemy_summary)
+```
+
+
+```{r}
+sumtable(blasphemy_summary, 
+         out = 'latex',
+         summ = c('min(x)',
+                'pctile(x)[25]',
+                'median(x)',
+                'mean(x)',
+                'pctile(x)[75]',
+                'max(x)',
+                'sd(x)'),
+         summ.names = c('Min', 'Q1', 'Median', 'Mean', 'Q3', 'Max', 'Std.Dev'))
+```
+
+```{r}
+blasphemy_summary_no_NA <- blasphemy_summary %>%
+  filter(region != 'Not Provided')
+st(blasphemy_summary_no_NA, 
+   group = 'region', 
+   group.test = TRUE, 
+   out = 'latex')
+```
+
+
+## Wordcloud
+
+
+```{r}
+# Create a corpus from the tweets 
+blasphemy_corpus <- corpus(blasphemy_preprocessed_final)
+
+blasphemy_tokens <- spacy_parse(blasphemy_corpus) %>% 
+      subset(!pos %in% c('ADP', 'ADV', 'AUX', 'PART', 'PUNCT', 'SPACE', 'SYM', 'NUM')) %>%
+      as.tokens(use_lemma = TRUE) %>%
+      tokens_remove(stopwords("en"), padding = TRUE) %>% # Remove English stopwords
+      tokens_remove(pattern = c("amp_*", "amp"), padding = TRUE) %>% 
+      tokens_keep(min_nchar = 2)
+```
+
+
+```{r}
+# Identify collocations
+(tstat_col_caps <- blasphemy_tokens %>% 
+                  textstat_collocations(min_count = 30, size = 2:3))
+```
+
+```{r}
+(blasphemy_dfm <- blasphemy_tokens %>%
+        tokens_compound(pattern = tstat_col_caps[tstat_col_caps$z > 15]) %>%
+        dfm() %>%
+        dfm_trim(min_termfreq = 5, max_docfreq = 0.7, docfreq_type = 'prop'))
+```
+
+
+```{r}
+# Spacy removes the docvars - re-attach docvars from the initial corpus
+# Find out dropped documents when converted to dfm
+cp <- docnames(blasphemy_corpus)
+d <- docnames(blasphemy_dfm)
+print(cp[!(cp %in% d)])
+```
+
+
+```{r}
+# Drop removed doc
+corpus_docvars <- docvars(blasphemy_corpus, 'region')#[-6026]
+length(corpus_docvars)
+```
+
+```{r}
+docvars(blasphemy_dfm, 'region') <- corpus_docvars
+```
+
+
+
+```{r wordcloud}
+textplot_wordcloud(blasphemy_dfm, min_size = .75, max_size = 3, max_words = 50)
+```
+
+```{r warning = FALSE}
+blasphemy_dfm_grouped <- blasphemy_dfm %>%
+  dfm_group(groups = 'region')
+
+textplot_wordcloud(blasphemy_dfm_grouped,
+                   color = RColorBrewer::brewer.pal(8,"Dark2"),
+                   comparison = TRUE, 
+                   labelsize = 1)
+```
+
+
+
+```{r}
+# Save the DFM to a RDA file
+save(blasphemy_dfm, file = "blasphemy_dfm.rda")
+```
+
+
