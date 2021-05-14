@@ -46,12 +46,6 @@ dim(blasphemy_preprocessed_final)
 ```
 
 
-## Time Range
-
-```{r}
-print(min(blasphemy_preprocessed_final$created_at))
-print(max(blasphemy_preprocessed_final$created_at))
-```
 ```{r}
 # Additional pre-processing
 # Convert to lower case
@@ -76,8 +70,17 @@ blasphemy_preprocessed_final <- blasphemy_preprocessed_final %>% distinct(text, 
 blasphemy_preprocessed_final <- blasphemy_preprocessed_final[sapply(strsplit(blasphemy_preprocessed_final$text, " "), length) > 1,]
 ```
 
+
+
 ```{r}
 dim(blasphemy_preprocessed_final)
+```
+
+## Time Range
+
+```{r}
+print(min(blasphemy_preprocessed_final$created_at))
+print(max(blasphemy_preprocessed_final$created_at))
 ```
 
 
@@ -141,7 +144,7 @@ grid.arrange(p1, p2, nrow = 1)
 ## Statistics about the text
 
 ```{r}
-# Create Corpus
+# Create a corpus from the tweets 
 blasphemy_corpus <- corpus(blasphemy_preprocessed_final)
 ```
 
@@ -149,22 +152,8 @@ blasphemy_corpus <- corpus(blasphemy_preprocessed_final)
 ```{r}
 blasphemy_summary <- textstat_summary(blasphemy_corpus) %>%
    cbind(region = blasphemy_preprocessed_final$region)
-```
-
-```{r}
 head(blasphemy_summary)
 ```
-
-
-```{r}
-(blasphemy_all_summary <- blasphemy_summary %>%
-    summarise(across(where(is.numeric), ~ median(.x, na.rm = TRUE))))
-```
-
-```{r}
-summary(blasphemy_summary)
-```
-
 
 ```{r}
 sumtable(blasphemy_summary, 
@@ -180,9 +169,7 @@ sumtable(blasphemy_summary,
 ```
 
 ```{r}
-blasphemy_summary_no_NA <- blasphemy_summary %>%
-  filter(region != 'Not Provided')
-st(blasphemy_summary_no_NA, 
+st(blasphemy_summary, 
    group = 'region', 
    group.test = TRUE, 
    out = 'latex')
@@ -193,9 +180,6 @@ st(blasphemy_summary_no_NA,
 
 
 ```{r}
-# Create a corpus from the tweets 
-blasphemy_corpus <- corpus(blasphemy_preprocessed_final)
-
 blasphemy_tokens <- spacy_parse(blasphemy_corpus) %>% 
       subset(!pos %in% c('ADP', 'ADV', 'AUX', 'PART', 'PUNCT', 'SPACE', 'SYM', 'NUM')) %>%
       as.tokens(use_lemma = TRUE) %>%
@@ -207,13 +191,13 @@ blasphemy_tokens <- spacy_parse(blasphemy_corpus) %>%
 
 ```{r}
 # Identify collocations
-(tstat_col_caps <- blasphemy_tokens %>% 
+(blasphemy_collocations <- blasphemy_tokens %>% 
                   textstat_collocations(min_count = 30, size = 2:3))
 ```
 
 ```{r}
 (blasphemy_dfm <- blasphemy_tokens %>%
-        tokens_compound(pattern = tstat_col_caps[tstat_col_caps$z > 15]) %>%
+        tokens_compound(pattern = blasphemy_collocations[blasphemy_collocations$z > 15]) %>%
         dfm() %>%
         dfm_trim(min_termfreq = 5, max_docfreq = 0.7, docfreq_type = 'prop'))
 ```
