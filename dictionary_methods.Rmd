@@ -12,18 +12,37 @@ knitr::opts_chunk$set(
   dpi = 300,
   cache = TRUE
   )
+library(grid)
+library(gridExtra)
+library(kableExtra)
+library(lemon)
 library(quanteda)
 library(quanteda.dictionaries)
 library(quanteda.textstats)
 library(tidyverse)
 ```
 
+```{r}
+load(file = "blasphemy_preprocessed_final.rda")
+```
+
+```{r}
+extract <- blasphemy_preprocessed_final %>%
+  select(created_at, screen_name, text, country_from_location, region)
+
+colnames(extract) <- c('created_at', 'screen_name', 'text', 'derived_country', 'region')
+
+kable(head(extract)) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "left")
+```
+
+
+
 ```{r load_data}
 # Load Data and NRC dictionary
 load(file = "blasphemy_dfm_no_noise.rda")
 data(data_dictionary_MFD)
 ```
-
 
 ```{r}
 # Explore format of dictionary
@@ -214,19 +233,6 @@ ggplot(blasphemy_df,
     labs(title = 'Anger',
          x = "Delta Awarded?", 
         y = 'anger')
-```
-
-
-## Get 'top' tweets in terms of engagement: i.e. quotes and replies
-
-```{r}
-docvars(blasphemy_corpus)
-```
-
-
-
-```{r pressure, echo=FALSE}
-plot(pressure)
 ```
 
 
