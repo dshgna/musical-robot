@@ -140,99 +140,18 @@ mf10 <-  plot_mf("sanctity.vice")
 
 ```{r fig.width = 6, fig.height = 3}
 grid_arrange_shared_legend(mf1, mf2, mf3, mf4, mf5, mf6, mf7, mf8, mf9, mf10,
-                           ncol = 4, 
-                           nrow = 3,  
+                           ncol = 5, 
+                           nrow = 2,  
                            position = 'bottom')
 ```
 
 
-
-```{r}
-#summarise_if(is.numeric, funs(blasphemy_df$doc_id[which.max(.)], 
-       #                             blasphemy_df$doc_id[which.min(.)]))
-```
 ```{r}
 (blasphemy_df_regions <- blasphemy_df %>%
       summarise_if(is.numeric, funs(blasphemy_df$doc_id[which.max(.)], 
                                     blasphemy_df$doc_id[which.min(.)]))
 )
+#summarise_if(is.numeric, funs(blasphemy_df$doc_id[which.max(.)], 
+       #                             blasphemy_df$doc_id[which.min(.)]))
 ```
-
-
-
-
-## Assign scores for each tweet
-
-```{r tweet_sentiment}
-blasphemy_weights <- dfm_lookup(blasphemy_dfm_weighted, dictionary = data_dictionary_NRC)
-```
-
-```{r}
-blasphemy_scores<- dfm_lookup(blasphemy_dfm_grouped, dictionary = data_dictionary_NRC)
-```
-
-```{r}
-(blasphemy_df <- convert(blasphemy_scores, to = "data.frame"))
-```
-
-
-
-```{r}
-blasphemy_df <- convert(blasphemy_weights, to = "data.frame")
-blasphemy_df
-```
-
-
-
-
-
-```{r}
-blasphemy_dfm_weighted <- dfm_weight(blasphemy_dfm_no_noise, scheme = "prop")
-blasphemy_scores<- dfm_lookup(blasphemy_dfm_weighted, dictionary = data_dictionary_NRC)
-(blasphemy_df <- convert(blasphemy_scores, to = "data.frame"))
-```
-
-```{r}
-blasphemy_dfm_no_noise
-```
-
-
-
-
-
-
-
-```{r}
-library(xtable)
-xtable(blasphemy_df)
-```
-
-
-
-```{r}
-# TODO: Plot by region
-plot_mf <- function(moral, y_title) {
-  mf <- ggplot(blasphemy_df, 
-       aes(x = delta, y = get(moral), fill = delta)) + 
-    geom_boxplot(varwidth = TRUE) +
-    theme(legend.position = "top") +
-    labs(title = y_title,
-         x = "Delta Awarded?", 
-        y = y_title)
-  return(mf)
-}
-
-
-```
-
-```{r}
-ggplot(blasphemy_df, 
-       aes(x = 'doc_id', y = 'anger')) + 
-    geom_point() +
-    theme(legend.position = "top") +
-    labs(title = 'Anger',
-         x = "Delta Awarded?", 
-        y = 'anger')
-```
-
 
