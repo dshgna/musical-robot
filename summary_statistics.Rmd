@@ -145,7 +145,7 @@ grid.arrange(p1, p2, nrow = 1)
 
 ```{r}
 # Create a corpus from the tweets 
-blasphemy_corpus <- corpus(blasphemy_preprocessed_final)
+(blasphemy_corpus <- corpus(blasphemy_preprocessed_final, docid_field = 'status_id'))
 ```
 
 
@@ -214,12 +214,12 @@ print(cp[!(cp %in% d)])
 
 ```{r}
 # Drop removed doc
-corpus_docvars <- docvars(blasphemy_corpus, 'region')#[-6026]
-length(corpus_docvars)
+#corpus_docvars <- docvars(blasphemy_corpus, 'region')#[-6026]
+#length(corpus_docvars)
 ```
 
 ```{r}
-docvars(blasphemy_dfm, 'region') <- corpus_docvars
+docvars(blasphemy_dfm) <- docvars(blasphemy_corpus)
 ```
 
 

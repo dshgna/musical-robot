@@ -5,25 +5,228 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(
+  echo = TRUE,
+  fig.path = "../report/images/",
+  dev = "png",
+  dpi = 300,
+  cache = TRUE
+  )
+library(quanteda)
+library(quanteda.dictionaries)
+library(quanteda.textstats)
+library(tidyverse)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r load_data}
+# Load Data and NRC dictionary
+load(file = "blasphemy_dfm_no_noise.rda")
+data(data_dictionary_MFD)
 ```
 
-## Including Plots
 
-You can also embed plots, for example:
+```{r}
+# Explore format of dictionary
+str(data_dictionary_MFD)
+```
+
+```{r}
+# Group by region
+blasphemy_dfm_grouped <- blasphemy_dfm_no_noise %>%
+  dfm_group(groups = 'region')
+# Weight DFM by proportions
+blasphemy_dfm_weighted <- dfm_weight(blasphemy_dfm_grouped, scheme = "prop")
+# Apply dictionary
+(blasphemy_weights_MFD <- dfm_lookup(blasphemy_dfm_weighted, dictionary = data_dictionary_MFD))
+```
+
+```{r}
+(blasphemy_df <- convert(blasphemy_weights_MFD, to = "data.frame"))
+```
+
+```{r}
+blasphemy_df %>%
+  rowwise() %>%
+  mutate(max = colnames(blasphemy_df)[which.max(c_across(where(is.numeric))) + 1], 
+         min = colnames(blasphemy_df)[which.min(c_across(where(is.numeric))) + 1]) 
+```
+```{r}
+(# Pivot
+blasphemy_df_pivot <- blasphemy_df %>%
+  pivot_longer(
+    cols = !doc_id
+  )
+)
+```
+
+
+
+
+
+```{r}
+ggplot(blasphemy_df_pivot, aes(x = doc_id, 
+                         y = value, 
+                         color = name)) + 
+    geom_point(size = 0.9) +
+    labs(x = 'Region',
+         y = 'Score',
+         color = 'Moral Foundations') +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 12))
+```
+
+```{r}
+# Find words in the dfm which are dictionary matches
+# Adapted from https://stackoverflow.com/questions/56733046/extract-top-positive-and-negative-features-when-applying-dictionary-in-quanteda
+(dictionary_matches <- dfm_select(blasphemy_dfm_weighted, pattern = data_dictionary_MFD["authority.vice"]) #%>%
+ # topfeatures()
+)
+# 
+```
+
+
+```{r}
+docvars(blasphemy_dfm_weighted, "region") <- docnames(blasphemy_dfm_weighted)
+```
+
+
+
+```{r}
+plot_mf <- function(moral) {
+  # Select words belonging to each foundation
+  select <- dfm_select(blasphemy_dfm_no_noise, data_dictionary_MFD[moral])
+  p <- textstat_frequency(select, n = 4, groups = "region")
+  g <- ggplot(p, aes(x = frequency, y = feature, color = group)) + 
+    geom_point(size = 0.9) +
+    labs(title = moral, y = '', x = '',
+         color = 'Region') 
+}
+      
+```
+
+```{r}
+mf1 <-  plot_mf("authority.virtue") 
+mf2 <-  plot_mf("authority.vice") 
+mf3 <-  plot_mf("care.virtue") 
+mf4 <-  plot_mf("care.vice") 
+mf5 <-  plot_mf("fairness.virtue") 
+mf6 <-  plot_mf("fairness.vice") 
+mf7 <-  plot_mf("loyalty.virtue") 
+mf8 <-  plot_mf("loyalty.vice") 
+mf9 <-  plot_mf("sanctity.virtue") 
+mf10 <-  plot_mf("sanctity.vice") 
+```
+
+
+
+
+```{r fig.width = 6, fig.height = 3}
+grid_arrange_shared_legend(mf1, mf2, mf3, mf4, mf5, mf6, mf7, mf8, mf9, mf10,
+                           ncol = 4, 
+                           nrow = 3,  
+                           position = 'bottom')
+```
+
+
+
+```{r}
+#summarise_if(is.numeric, funs(blasphemy_df$doc_id[which.max(.)], 
+       #                             blasphemy_df$doc_id[which.min(.)]))
+```
+```{r}
+(blasphemy_df_regions <- blasphemy_df %>%
+      summarise_if(is.numeric, funs(blasphemy_df$doc_id[which.max(.)], 
+                                    blasphemy_df$doc_id[which.min(.)]))
+)
+```
+
+
+
+
+## Assign scores for each tweet
+
+```{r tweet_sentiment}
+blasphemy_weights <- dfm_lookup(blasphemy_dfm_weighted, dictionary = data_dictionary_NRC)
+```
+
+```{r}
+blasphemy_scores<- dfm_lookup(blasphemy_dfm_grouped, dictionary = data_dictionary_NRC)
+```
+
+```{r}
+(blasphemy_df <- convert(blasphemy_scores, to = "data.frame"))
+```
+
+
+
+```{r}
+blasphemy_df <- convert(blasphemy_weights, to = "data.frame")
+blasphemy_df
+```
+
+
+
+
+
+```{r}
+blasphemy_dfm_weighted <- dfm_weight(blasphemy_dfm_no_noise, scheme = "prop")
+blasphemy_scores<- dfm_lookup(blasphemy_dfm_weighted, dictionary = data_dictionary_NRC)
+(blasphemy_df <- convert(blasphemy_scores, to = "data.frame"))
+```
+
+```{r}
+blasphemy_dfm_no_noise
+```
+
+
+
+
+
+
+
+```{r}
+library(xtable)
+xtable(blasphemy_df)
+```
+
+
+
+```{r}
+# TODO: Plot by region
+plot_mf <- function(moral, y_title) {
+  mf <- ggplot(blasphemy_df, 
+       aes(x = delta, y = get(moral), fill = delta)) + 
+    geom_boxplot(varwidth = TRUE) +
+    theme(legend.position = "top") +
+    labs(title = y_title,
+         x = "Delta Awarded?", 
+        y = y_title)
+  return(mf)
+}
+
+
+```
+
+```{r}
+ggplot(blasphemy_df, 
+       aes(x = 'doc_id', y = 'anger')) + 
+    geom_point() +
+    theme(legend.position = "top") +
+    labs(title = 'Anger',
+         x = "Delta Awarded?", 
+        y = 'anger')
+```
+
+
+## Get 'top' tweets in terms of engagement: i.e. quotes and replies
+
+```{r}
+docvars(blasphemy_corpus)
+```
+
+
 
 ```{r pressure, echo=FALSE}
 plot(pressure)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+

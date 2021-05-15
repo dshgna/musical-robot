@@ -5,25 +5,155 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(
+  echo = TRUE,
+  fig.path = "../report/images/",
+  dev = "png",
+  dpi = 300,
+  cache = TRUE
+  )
+library(quanteda)
+library(quanteda.textstats)
+library(stm)
+library(tidyverse)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r load_data}
+load(file = "blasphemy_dfm.rda")
 ```
 
-## Including Plots
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r}
+docvars(blasphemy_dfm, 'status_id') <- docnames(blasphemy_dfm)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+## Tokenise and pre-process
+
+```{r corpus}
+# Convert dfm into a format suitable for STM input
+stm_input <- convert(blasphemy_dfm, to = "stm")
+```
+
+
+```{r}
+stm_input$meta
+```
+
+
+## Search for an appropriate number of topics
+
+```{r}
+# Choose a number of appropriate topics
+k_search_output <- searchK(stm_input$documents, 
+                        stm_input$vocab,
+                        K = c(3:10, 25, 50, 100), 
+                        prevalence = ~ region,
+                        #content = ~ region, # The assumption that different words are used for the same topic doesn't seem accurate
+                        data = stm_input$meta,
+                        heldout.seed = 123, 
+                        verbose = TRUE)
+```
+
+```{r k_search_output}
+plot(k_search_output)
+```
+
+
+```{r}
+k_search_output
+```
+
+
+```{r}
+# Create model with K = 8
+blasphemy_model <- stm(stm_input$documents, 
+                       stm_input$vocab, 
+                       K = 8,
+                       prevalence = ~ region,
+                       data = stm_input$meta, 
+                       verbose = TRUE,
+                       init.type = c("Spectral"))
+```
+
+```{r blasphemy_model, fig.height = 2, fig.width = 3}
+# Plot model results
+plot(blasphemy_model, type = 'summary')
+```
+
+
+```{r}
+# Wordclouds
+c1 <- cloud(blasphemy_model, topic = 1, scale = c(3,.25), color = sample(colors(), 1))
+c2 <- cloud(blasphemy_model, topic = 2, scale = c(3,.25), color = sample(colors(), 1))
+c3 <- cloud(blasphemy_model, topic = 3, scale = c(3,.25), color = sample(colors(), 1))
+c4 <- cloud(blasphemy_model, topic = 4, scale = c(3,.25), color = sample(colors(), 1))
+c5 <- cloud(blasphemy_model, topic = 5, scale = c(3,.25), color = sample(colors(), 1))
+c6 <- cloud(blasphemy_model, topic = 6, scale = c(3,.25), color = sample(colors(), 1))
+c7 <- cloud(blasphemy_model, topic = 7, scale = c(3,.25), color = sample(colors(), 1))
+c8 <- cloud(blasphemy_model, topic = 8, scale = c(2,.25), color = sample(colors(), 1))
+#c9 <- cloud(cmv_model, topic = 9, scale = c(2,.25))
+#c10 <- cloud(cmv_model, topic = 10, scale = c(2,.25))
+```
+
+```{r, fig.height = 3, fig.width = 2}
+for (x in 1:8) {
+  sample_tweet <- findThoughts(blasphemy_model,
+                              texts = blasphemy_preprocessed_final$text[rowSums(blasphemy_dfm) > 0],
+                               n = 4, topics = x)$docs[[1]]
+  plotQuote(sample_tweet, width = 45,
+          main = paste("Documents containing topic ", x))
+}
+```
+```{r}
+# Effect Estimates
+effect_estimates <- estimateEffect(c(1, 2, 7, 8) ~ region, blasphemy_model, meta = stm_input$meta)
+```
+
+```{r, fig.height = 8, fig.width = 12}
+plot(effect_estimates, covariate = "region", topics = c(1, 2, 7, 8),
+     model = blasphemy_model, method = "pointestimate",
+     xlab = "Mean Topic Proportions", 
+     main = "Topic Proportions for Regions",
+     xlim = c(0.03, 0.31))
+```
+
+
+```{r}
+topic_proportions <- make.dt(blasphemy_model, meta = stm_input$meta)
+dim(topic_proportions)
+```
+
+```{r}
+head(topic_proportions)
+```
+
+
+
+```{r}
+(remove_noise <- topic_proportions %>% 
+      rowwise() %>%
+      mutate(noisy = Topic3 > 0.5 | Topic4 > 0.5 | Topic5 > 0.5 | Topic6 > 0.5) %>%
+      filter(!noisy))
+```
+```{r}
+remove_noise$status_id
+```
+
+
+```{r}
+(blasphemy_dfm_no_noise <- blasphemy_dfm %>%
+  dfm_subset(status_id %in% remove_noise$status_id))
+```
+
+
+```{r}
+save(blasphemy_dfm_no_noise, file = "blasphemy_dfm_no_noise.rda")
+```
+
+```{r}
+findThoughts(blasphemy_model, texts = blasphemy_preprocessed_final$text[rowSums(blasphemy_dfm) > 0],
+                               n = 30, topics = 1)$docs[[1]]
+```
+

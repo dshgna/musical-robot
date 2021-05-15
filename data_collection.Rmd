@@ -48,12 +48,12 @@ blasphemy_tweets <- search_tweets(q = 'blasphemy',
 ```{r}
 # Save to a RDA file
 save(blasphemy_tweets, file = "blasphemy_tweets.rda")
-dim(blasphemy_tweets)
 ```
 
 ```{r}
 # Extract from RDA
 load(file = "blasphemy_tweets.rda")
+dim(blasphemy_tweets)
 ```
 
 ```{r}
@@ -220,7 +220,7 @@ blasphemy_preprocessed <- blasphemy_tweets %>%
                                         countryname(country, 'country.name.en'), 
                                         get_country_from_location(location))) %>%
   select(user_id, status_id, created_at, screen_name, text, reply_to_status_id,
-         is_quote, is_retweet, quoted_status_id, retweet_status_id, 
+         is_quote, favorite_count, retweet_count, quote_count, reply_count, 
          country, location, country_from_location)  
   
 dim(blasphemy_preprocessed)
@@ -258,6 +258,7 @@ extracted_locations['Sendai City, Miyagi']
 ```
 
 ```{r}
+load(file = "extracted_locations.rda")
 # Function to retrieve the country from the data in extracted_locations
 get_country_from_api <- function(location) {
   if (has.key(location, extracted_locations) == TRUE) {
@@ -311,7 +312,7 @@ blasphemy_preprocessed_final <- blasphemy_preprocessed %>%
 
 ```{r}
 has_locations <- blasphemy_preprocessed_final %>%
-  filter(!is.na(region)) 
+  filter(region != 'Not Provided') 
 dim(has_locations) # 13,593 28K did not have any location information whatsoever and 4K had invalid locations
 ```
 
